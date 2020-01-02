@@ -137,6 +137,9 @@ int main()
   int frameParity = 0; // For interlaced frame updates, this is either 0 or 1 to denote evens or odds.
   OpenKeyboard();
   printf("All initialized, now running main loop...\n");
+  
+  fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL, 0) | O_NONBLOCK);
+  
   while(programRunning)
   {
     prevFrameWasInterlacedUpdate = interlacedUpdate;
@@ -546,7 +549,7 @@ int main()
     }
     else if (!displayOff && tick() - displayContentsLastChanged > TURN_DISPLAY_OFF_AFTER_USECS_OF_INACTIVITY)
     {
-      TurnDisplayOff();
+      //TurnDisplayOff();
       displayOff = true;
     }
 #endif
@@ -563,6 +566,29 @@ int main()
     }
     statsBytesTransferred += bytesTransferred;
 #endif
+
+  	int count = 1;
+			char buffer[100];
+			//stdin is line buffered so we can cheat a little bit
+			while (count > 0){ // dump entire buffer
+				count = read(STDIN_FILENO, buffer, sizeof(buffer));
+				if (count > 1){ //ignore blank lines
+					buffer[count-1] = '\0'; //replace last char with string ending
+					//printf("!%s!\n",buffer);
+					//check the line
+					int temp[4];
+					
+					int result = sscanf(buffer,"%d %d %d %d", &temp[0], &temp[1],  &temp[2], &temp[3]);
+					if (result != 4){
+						fprintf(stderr, "Unrecognized input with %d items.\n", result);
+					}else{
+						resize(temp[0],temp[1],temp[2],temp[3]);
+					}
+					
+				}
+			}
+			
+			
   }
 
   DeinitGPU();

@@ -27,7 +27,8 @@ bool MarkProgramQuitting(void);
 DISPMANX_DISPLAY_HANDLE_T display;
 DISPMANX_RESOURCE_HANDLE_T screen_resource;
 VC_RECT_T rect;
-
+DISPMANX_MODEINFO_T display_info;
+  
 int frameTimeHistorySize = 0;
 
 FrameHistory frameTimeHistory[FRAME_HISTORY_MAX_SIZE] = {};
@@ -341,7 +342,7 @@ void InitGPU()
   bcm_host_init();
   display = vc_dispmanx_display_open(0);
   if (!display) FATAL_ERROR("vc_dispmanx_display_open failed!");
-  DISPMANX_MODEINFO_T display_info;
+
   int ret = vc_dispmanx_display_get_info(display, &display_info);
   if (ret) FATAL_ERROR("vc_dispmanx_display_get_info failed!");
 
@@ -483,6 +484,64 @@ void InitGPU()
   int rc = pthread_create(&gpuPollingThread, NULL, gpu_polling_thread, NULL); // After creating the thread, it is assumed to have ownership of the SPI bus, so no SPI chat on the main thread after this.
   if (rc != 0) FATAL_ERROR("Failed to create GPU polling thread!");
 #endif
+}
+
+void resize(int x, int y, int z, int w){
+	
+while ((display_info.width - (x + y)) < DISPLAY_WIDTH){
+	if (x > 0) x--;
+	if (y > 0) y--;
+}
+while ((display_info.height - (z + w)) < DISPLAY_HEIGHT){
+	if (z > 0) z--;
+	if (w > 0) w--;
+}
+  
+// The overscan values are in normalized 0.0 .. 1.0 percentages of the total width/height of the screen.
+  int overscanLeft = x;
+  int overscanRight = y;
+  int overscanTop = z;
+  int overscanBottom = w;
+
+  int relevantDisplayWidth = display_info.width - (overscanLeft + overscanRight);
+  int relevantDisplayHeight = display_info.height - (overscanTop + overscanBottom);
+  printf("Relevant source display area size with overscan cropped away: %dx%d.\n", relevantDisplayWidth, relevantDisplayHeight);
+
+  double scalingFactorWidth = (double)DISPLAY_DRAWABLE_WIDTH/relevantDisplayWidth;
+  double scalingFactorHeight = (double)DISPLAY_DRAWABLE_HEIGHT/relevantDisplayHeight;
+
+  // Since display resolution must be full pixels and not fractional, round the scaling to nearest pixel size
+  // (and recompute after the subpixel rounding what the actual scaling factor ends up being)
+  int scaledWidth = ROUND_TO_NEAREST_INT(relevantDisplayWidth * scalingFactorWidth);
+  int scaledHeight = ROUND_TO_NEAREST_INT(relevantDisplayHeight * scalingFactorHeight);
+  scalingFactorWidth = (double)scaledWidth/relevantDisplayWidth;
+  scalingFactorHeight = (double)scaledHeight/relevantDisplayHeight;
+
+  displayXOffset = DISPLAY_COVERED_LEFT_SIDE + (DISPLAY_DRAWABLE_WIDTH - scaledWidth) / 2;
+  displayYOffset = DISPLAY_COVERED_TOP_SIDE + (DISPLAY_DRAWABLE_HEIGHT - scaledHeight) / 2;
+
+  excessPixelsLeft = x;
+  excessPixelsRight = y;
+  excessPixelsTop = z;
+  excessPixelsBottom = w;
+
+  gpuFrameWidth = scaledWidth;
+  gpuFrameHeight = scaledHeight;
+  gpuFramebufferScanlineStrideBytes = RoundUpToMultipleOf((gpuFrameWidth + excessPixelsLeft + excessPixelsRight) * 2, 32);
+  gpuFramebufferSizeBytes = gpuFramebufferScanlineStrideBytes * (gpuFrameHeight + excessPixelsTop + excessPixelsBottom);
+  
+   if (screen_resource)
+  {
+    vc_dispmanx_resource_delete(screen_resource);
+    screen_resource = 0;
+  }
+  
+  uint32_t image_prt;
+  screen_resource = vc_dispmanx_resource_create(VC_IMAGE_RGB565, scaledWidth + excessPixelsLeft + excessPixelsRight, scaledHeight + excessPixelsTop + excessPixelsBottom, &image_prt);
+  vc_dispmanx_rect_set(&rect, excessPixelsLeft, excessPixelsTop, scaledWidth, scaledHeight);
+  if (!screen_resource) FATAL_ERROR("vc_dispmanx_resource_create failed!");
+ // printf("GPU grab rectangle is offset x=%d,y=%d, size w=%dxh=%d, aspect ratio=%f\n", excessPixelsLeft, excessPixelsTop, scaledWidth, scaledHeight, (double)scaledWidth / scaledHeight);
+
 }
 
 void DeinitGPU()

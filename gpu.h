@@ -4,6 +4,7 @@
 
 void InitGPU(void);
 void DeinitGPU(void);
+void resize(int x, int y, int z, int w);
 void AddHistogramSample(uint64_t t);
 bool SnapshotFramebuffer(uint16_t *destination);
 bool IsNewFramebuffer(uint16_t *possiblyNewFramebuffer, uint16_t *oldFramebuffer);
